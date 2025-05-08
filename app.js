@@ -6,10 +6,14 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const app = express();
 const PORT = 5000;
-app.use(cors());
 app.use(express.json());
 const ExcelJS = require('exceljs');
 const JWT_SECRET = "your-secret-key"; 
+app.use(cors({
+  origin: 'https://starter-eight-brown.vercel.app',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 // List of tables
 const tables = [
