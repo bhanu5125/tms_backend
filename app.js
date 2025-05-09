@@ -392,7 +392,7 @@ app.put("/api/update-salaries", (req, res) => {
     }
 
     // Clear previous updates
-    db.query("TRUNCATE TABLE updatedSalRecords", (err) => {
+    db.query("TRUNCATE TABLE updatedsalrecords", (err) => {
       if (err) {
         return db.rollback(() => {
           console.error("TRUNCATE error:", err);
@@ -411,7 +411,7 @@ app.put("/api/update-salaries", (req, res) => {
 
       // Insert new updates
       const insertQuery = `
-        INSERT INTO updatedSalRecords 
+        INSERT INTO updatedsalrecords 
           (SalId, StaffId, Salary, Pf_ESIon, TDS) 
         VALUES ?`;
       
