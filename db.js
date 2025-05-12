@@ -5,7 +5,10 @@ const connection = mysql.createConnection({
     port: '3306',
     user: 'admin',
     password: 'Bhanu$12$',
-    database: 'sms'
+    database: 'sms',
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
 // Connect to MySQL
