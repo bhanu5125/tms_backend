@@ -1,11 +1,11 @@
 const mysql = require('mysql2');
 
 const connection = mysql.createConnection({
-    host: 'b43vmkmobgmqtsuy6pje-mysql.services.clever-cloud.com',
+    host: 'database-1.cqj8amwoqe29.us-east-1.rds.amazonaws.com',
     port: '3306',
-    user: 'ujd22pfszi18xqwv',
-    password: 'ClpZKevHxi8QfbZftYoJ',
-    database: 'b43vmkmobgmqtsuy6pje'
+    user: 'admin',
+    password: 'Bhanu$12$',
+    database: 'sms'
 });
 
 // Connect to MySQL
