@@ -10,10 +10,11 @@ app.use(express.json());
 const ExcelJS = require('exceljs');
 const JWT_SECRET = "your-secret-key"; 
 app.use(cors({
-  origin: 'https://starter-eight-brown.vercel.app',
+  origin: ['https://starter-eight-brown.vercel.app', 'http://localhost:5174'],
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 
 // List of tables
 const tables = [
