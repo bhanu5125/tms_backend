@@ -809,7 +809,66 @@ app.put("/api/update-salary-calc/", (req, res) => {
   });
 });
 
-app.put("/api/update-staff/:code", (req, res) => {
+app.put("/api/update-staff/:code", async (req, res) => {
+  const { code } = req.params;
+  const { tblsourcebk, staff, resignationReason } = req.body;
+
+  try {
+    // Get department name
+    const [deptResult] = await db.promise().query(
+      'SELECT DeptName FROM department WHERE ID = ?',
+      [staff.DeptId]
+    );
+
+    const params = [
+      code, // pCode
+      staff.FirstName,
+      staff.LastName,
+      staff.Guardian,
+      staff.Address,
+      staff.PrimaryPhone,
+      staff.SecondaryPhone,
+      staff.StaffType || null,
+      staff.IsActive,
+      1, // ModifiedBy
+      staff.DeptId,
+      deptResult[0]?.DeptName || '', // pDeptName
+      tblsourcebk.Bank_Acc_No,
+      tblsourcebk.Bank_Name,
+      tblsourcebk.Branch,
+      tblsourcebk.IFSC_Code,
+      tblsourcebk.Aadhar_Number,
+      staff.DOJ ? formatDateForMySQL(staff.DOJ) : null,
+      staff.DOR ? formatDateForMySQL(staff.DOR) : null,
+      resignationReason || null,
+      tblsourcebk.Otherinfo || null,
+      { type: db.types.INT, dir: db.types.OUT } // pSuccess
+    ];
+
+    const query = `CALL sp_UpdateStaffByCode(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @pSuccess);
+                   SELECT @pSuccess AS pSuccess;`;
+
+    const [results] = await db.promise().query(query, params);
+    const pSuccess = results[1][0].pSuccess;
+
+    if (pSuccess === 1) {
+      res.json({ message: "Staff updated successfully" });
+    } else {
+      const errorMap = {
+        '-1': 'Invalid date sequence: Start date must be after previous termination',
+        '-2': 'Termination date cannot be before start date'
+      };
+      res.status(400).json({ 
+        error: errorMap[pSuccess] || 'Update failed' 
+      });
+    }
+  } catch (err) {
+    console.error("Update error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
+});
+
+app.put("/api/update-staff1/:code", (req, res) => {
   const { code } = req.params;
   const { tblsourcebk, staff } = req.body;
 
