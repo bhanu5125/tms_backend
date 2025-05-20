@@ -842,7 +842,6 @@ app.put("/api/update-staff/:code", async (req, res) => {
       staff.DOR ? formatDateForMySQL(staff.DOR) : null,
       resignationReason || null,
       tblsourcebk.Otherinfo || null,
-      { type: db.types.INT, dir: db.types.OUT } // pSuccess
     ];
 
     const query = `CALL sp_UpdateStaffByCode(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @pSuccess);
