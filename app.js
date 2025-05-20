@@ -105,7 +105,7 @@ function formatDate2ForMySQL(date) {
 }
 
 // API to handle form submission
-app.post("/api/submit-form", (req, res) => {
+app.post("/api/submit-form1", (req, res) => {
   const { tblsourcebk, staff } = req.body;
   console.log(req.body)
   // Format datetime values for MySQL
@@ -172,6 +172,61 @@ app.post("/api/submit-form", (req, res) => {
       }
 
       res.status(200).json({ message: "Form submitted successfully" });
+    });
+  });
+});
+
+app.post("/api/submit-form", (req, res) => {
+  const { tblsourcebk, staff } = req.body;
+
+  // Validate required fields
+  if (!staff.DeptId || !staff.FirstName || !staff.LastName || !staff.PrimaryPhone) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  // Prepare parameters for stored procedure
+  const params = [
+    staff.FirstName,
+    staff.LastName,
+    staff.Guardian || null,
+    staff.Address || null,
+    staff.PrimaryPhone,
+    staff.SecondaryPhone || null,
+    staff.StaffType || null, // From groupNo
+    staff.DeptId,
+    1, // CreatedBy
+    1, // ModifiedBy
+    tblsourcebk.Bank_Acc_No,
+    tblsourcebk.Bank_Name || null,
+    tblsourcebk.Branch || null,
+    tblsourcebk.IFSC_Code,
+    tblsourcebk.Aadhar_Number,
+    staff.DOJ ? formatDateForMySQL(new Date(staff.DOJ)) : null,
+    tblsourcebk.Otherinfo || null,
+    { type: db.types.INT, dir: db.types.OUT } // pSId OUT parameter
+  ];
+
+  // Call stored procedure
+  const query = `
+    CALL sp_AddStaff(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    SELECT @pSId AS pSId;
+  `;
+
+  db.query(query, params, (err, results) => {
+    if (err) {
+      console.error("Error calling stored procedure:", err);
+      return res.status(500).json({ error: "Database error" });
+    }
+
+    const pSId = results[1][0].pSId;
+    
+    if (pSId === 10000) {
+      return res.status(409).json({ error: "Staff already exists" });
+    }
+
+    res.status(200).json({ 
+      message: "Staff added successfully",
+      staffId: pSId 
     });
   });
 });
