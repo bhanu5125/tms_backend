@@ -192,7 +192,7 @@ app.post("/api/submit-form", (req, res) => {
     staff.Address || null,
     staff.PrimaryPhone,
     staff.SecondaryPhone || null,
-    staff.StaffType || null, // From groupNo
+    staff.StaffType === 0 ? null : staff.StaffType
     staff.DeptId,
     1, // CreatedBy
     1, // ModifiedBy
