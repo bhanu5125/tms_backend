@@ -298,73 +298,46 @@ app.post("/api/submit-form", (req, res) => {
 app.get("/api/get-staff/:code", (req, res) => {
   const { code } = req.params;
 
-  // 1) Call the wrapper SP to get staff + bank + dates
-  db.query("CALL sp_GetStaffDetailsByCode(?)", [code], (err, spResults) => {
-    if (err) {
-      console.error("Error calling sp_GetStaffDetailsByCode:", err);
-      return res.status(500).json({ error: "Database error" });
-    }
+  const query = `CALL sp_GetStaffDetailsByCode(?);`;
 
-    const detailRows = spResults[0]; // first result set of CALL
-    if (!detailRows.length) {
-      return res.status(404).json({ error: "Staff not found" });
-    }
-    const d = detailRows[0];
+  db.query(query, [code], (err, results) => {
+    if (err) return res.status(500).json({ error: "Database error" });
+    if (results[0].length === 0) return res.status(404).json({ error: "Not found" });
+    
+    const staffData = results[0][0];
+    
+    const responseData = {
+      staff: {
+        Code: staffData.Code,
+        FirstName: staffData.FirstName,
+        LastName: staffData.LastName,
+        Guardian: staffData.Guardian,
+        Address: staffData.Address,
+        PrimaryPhone: staffData.PrimaryPhone,
+        SecondaryPhone: staffData.SecondaryPhone,
+        IsActive: staffData.IsActive,
+        DeptId: staffData.DeptID,
+        DOJ: staffData.DOJ ? formatDateForFrontend(staffData.DOJ) : null,
+        DOR: staffData.DOR ? formatDateForFrontend(staffData.DOR) : null
+      },
+      tblsourcebk: {
+        Aadhar_Number: staffData.Aadhar,
+        Bank_Acc_No: staffData.AcctNo,
+        Bank_Name: staffData.BankName,
+        IFSC_Code: staffData.IFSC,
+        Branch: staffData.Branch
+      },
+      resignationReason: staffData.ResignationReason
+    };
 
-    // 2) Fetch your tblsourcebk row
-    db.query(
-      `SELECT Emp_ID AS Code,
-              Aadhar_Number, Emp_P_No  AS PrimaryPhone,
-              Emp_A_No    AS SecondaryPhone,
-              DOJ, DOR,
-              Bank_Acc_No AS AccountNumber,
-              IFSC_Code   AS IFSC,
-              Bank_Name,
-              Emp_Address AS Address
-         FROM tblsourcebk
-        WHERE Emp_ID = ?`,
-      [code],
-      (err2, bkRows) => {
-        if (err2) {
-          console.error("Error fetching tblsourcebk:", err2);
-          return res.status(500).json({ error: "Database error" });
-        }
-        // if you want to allow missing tblsourcebk, just default to {}
-        const bk = bkRows[0] || {};
-
-        // 3) Merge into the shape your form needs
-        return res.json({
-          staff: {
-            code:       d.Code,
-            firstName:  d.FirstName,
-            lastName:   d.LastName,
-            guardian:   d.Guardian,
-            address:    d.Address,
-            primaryPhone:   d.PrimaryPhone,
-            secondaryPhone: d.SecondaryPhone,
-            isActive:   d.IsActive,
-            deptId:     d.DeptID,
-            StaffType:  d.StaffType,      // maps to your “groupNo” under the hood
-            DOJ:        d.StartedDate,    // you’ll feed into your DatePicker
-            DOR:        d.TerminatedDate, // same here
-            resignationReason: d.tReason,
-          },
-          tblsourcebk: {
-            Aadhar:        bk.Aadhar_Number,
-            primaryPhone:  bk.PrimaryPhone,
-            secondaryPhone:bk.SecondaryPhone,
-            DOJ:           bk.DOJ,
-            DOR:           bk.DOR,
-            AccountNumber: bk.AccountNumber,
-            IFSC:          bk.IFSC,
-            BankName:      bk.Bank_Name,
-            address:       bk.Address,
-          },
-        });
-      }
-    );
+    res.json(responseData);
   });
 });
+
+// Add date formatting helper
+function formatDateForFrontend(date) {
+  return new Date(date).toISOString().split('T')[0];
+}
 
 // GET Employee by Code
 app.get("/api/get-staff1/:code", (req, res) => {
