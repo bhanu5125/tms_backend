@@ -7,6 +7,7 @@ const connection = mysql.createConnection({
     password: 'Bhanu$12$',
     database: 'sms',
     waitForConnections: true,
+    multipleStatements: true,
     connectionLimit: 10,
     queueLimit: 0
 });
