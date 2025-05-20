@@ -317,6 +317,7 @@ app.get("/api/get-staff/:code", (req, res) => {
         SecondaryPhone: staffData.SecondaryPhone,
         IsActive: staffData.IsActive,
         DeptId: staffData.DeptID,
+        StaffType: staffData.StaffType,
         DOJ: staffData.DOJ ? formatDateForMySQL(staffData.DOJ) : null,
         DOR: staffData.DOR ? formatDateForMySQL(staffData.DOR) : null
       },
