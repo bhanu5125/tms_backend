@@ -317,8 +317,8 @@ app.get("/api/get-staff/:code", (req, res) => {
         SecondaryPhone: staffData.SecondaryPhone,
         IsActive: staffData.IsActive,
         DeptId: staffData.DeptID,
-        DOJ: staffData.DOJ ? formatDateForFrontend(staffData.DOJ) : null,
-        DOR: staffData.DOR ? formatDateForFrontend(staffData.DOR) : null
+        DOJ: staffData.DOJ ? formatDateForMySQL(staffData.DOJ) : null,
+        DOR: staffData.DOR ? formatDateForMySQL(staffData.DOR) : null
       },
       tblsourcebk: {
         Aadhar_Number: staffData.Aadhar,
