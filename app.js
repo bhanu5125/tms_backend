@@ -176,7 +176,7 @@ app.post("/api/submit-form1", (req, res) => {
   });
 });
 
-app.post("/api/submit-form", (req, res) => {
+app.post("/api/submit-form2", (req, res) => {
   const { tblsourcebk, staff } = req.body;
 
   // Validate required fields
@@ -227,6 +227,70 @@ app.post("/api/submit-form", (req, res) => {
     res.status(200).json({ 
       message: "Staff added successfully",
       staffId: pSId 
+    });
+  });
+});
+
+app.post("/api/submit-form", (req, res) => {
+  const { tblsourcebk, staff } = req.body;
+
+  console.log("Received body:", req.body);
+
+  // Validate required fields - you can add more robust validation as needed
+  if (
+    !staff.FirstName ||
+    !staff.LastName ||
+    !staff.PrimaryPhone ||
+    !staff.DeptId ||
+    !tblsourcebk.Bank_Acc_No
+  ) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  // Prepare CALL statement with parameters
+  const callProcedure = `
+    CALL sp_AddStaff(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @pSId);
+    SELECT @pSId as StaffId;
+  `;
+
+  // Map input fields properly, using safe fallbacks where necessary
+  const procedureParams = [
+    staff.FirstName,
+    staff.LastName,
+    staff.Guardian || "",
+    staff.Address || "",
+    staff.PrimaryPhone,
+    staff.SecondaryPhone || "",
+    staff.StaffType === 0 ? null : staff.StaffType,
+    staff.DeptId,
+    1, // CreatedBy, adjust accordingly
+    1, // ModifiedBy, adjust accordingly
+    tblsourcebk.Bank_Acc_No,
+    tblsourcebk.Bank_Name || "",
+    tblsourcebk.Branch || "", // Added Branch from tblsourcebk for completeness
+    tblsourcebk.IFSC_Code || "",
+    tblsourcebk.Aadhar_Number || "",
+    tblsourcebk.DOJ ? new Date(tblsourcebk.DOJ) : null, // Date parsing safely
+    tblsourcebk.Otherinfo || "", // Passing Otherinfo if provided
+  ];
+
+  db.query(callProcedure, procedureParams, (err, results) => {
+    if (err) {
+      console.error("Error calling stored procedure:", err);
+      return res.status(500).json({ error: "Failed to execute stored procedure" });
+    }
+
+    // The results array: first element is result of CALL, second is SELECT @pSId
+    const staffIdResult = results[1]; // Second result set contains SELECT @pSId
+    const returnedStaffId = staffIdResult[0]?.StaffId;
+
+    if (returnedStaffId === 10000) {
+      return res.status(400).json({ error: "Staff already exists" });
+    }
+
+    return res.status(200).json({
+      message: "Staff added successfully",
+      staffId: returnedStaffId,
     });
   });
 });
