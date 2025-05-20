@@ -844,7 +844,7 @@ app.put("/api/update-staff/:code", async (req, res) => {
       tblsourcebk.Otherinfo || null,
     ];
 
-    const query = `CALL sp_UpdateStaffByCode(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @pSuccess);
+    const query = `CALL sp_UpdateStaffByCode(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @pSuccess);
                    SELECT @pSuccess AS pSuccess;`;
 
     const [results] = await db.promise().query(query, params);
