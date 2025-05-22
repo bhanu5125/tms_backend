@@ -1071,7 +1071,7 @@ app.get('/api/attendance', (req, res) => {
       FIRSTNAME: s.FIRSTNAME,
       SURNAME: s.SURNAME,
       DEPARTMENT: s.DEPARTMENT,
-      attendance: s.is_present === 0, // true means absent
+      attendance: s.is_present === 1, // true means absent
       ot: s.ot,
       bonus: s.bonus,
       Year: year
