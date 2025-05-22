@@ -966,7 +966,7 @@ const MONTH_COLS = {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/attendance - Fetch attendance for a specific date
-app.get('/api/attendance', (req, res) => {
+app.get('/api/attendance1', (req, res) => {
   const date = req.query.date;
   const deptId = req.query.deptId;
   console.log(date);
@@ -1018,10 +1018,73 @@ app.get('/api/attendance', (req, res) => {
   });
 });
 
+app.get('/api/attendance', (req, res) => {
+  const date = req.query.date;
+  const deptId = req.query.deptId;
+
+  if (!date) {
+    return res.status(400).json({ error: 'date is required' });
+  }
+
+  const year = new Date(date).getFullYear();
+  const month = new Date(date).getMonth() + 1; // Months are 0-based
+  const day = new Date(date).getDate();
+
+  // Dynamically get the correct daily column like d1, d15, etc.
+  const dayColumn = `d${day}`;
+
+  let sql = `
+    SELECT
+      s.SId AS SID,
+      s.Code AS CODE,
+      s.FirstName AS FIRSTNAME,
+      s.LastName AS SURNAME,
+      d.DeptName AS DEPARTMENT,
+      COALESCE(sma.${dayColumn} + 0, 0) AS is_present,
+      COALESCE(sma.ot, 0) AS ot,
+      COALESCE(sma.bonus, 0) AS bonus
+    FROM staff s
+    JOIN department d ON s.DeptId = d.ID
+    LEFT JOIN staff_monthly_attendance sma 
+      ON s.SId = sma.staffid 
+      AND sma.year = ? 
+      AND sma.month = ?
+    WHERE s.IsActive = 1
+  `;
+
+  const params = [year, month];
+  if (deptId) {
+    sql += ' AND s.DeptId = ?';
+    params.push(deptId);
+  }
+  sql += ' ORDER BY s.DeptId, s.Code';
+
+  db.query(sql, params, (err, rows) => {
+    if (err) {
+      console.error('GET /api/attendance error:', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+
+    const result = rows.map((s) => ({
+      SID: s.SID,
+      CODE: s.CODE,
+      FIRSTNAME: s.FIRSTNAME,
+      SURNAME: s.SURNAME,
+      DEPARTMENT: s.DEPARTMENT,
+      attendance: s.is_present === 0, // true means absent
+      ot: s.ot,
+      bonus: s.bonus,
+      Year: year
+    }));
+
+    res.json(result);
+  });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/attendance - Save attendance records
 // Body: { records:[ { staffId, date:'YYYY-MM-DD', status:'present'|'absent' }, … ] }
-app.post('/api/attendance', (req, res) => {
+app.post('/api/attendance1', (req, res) => {
   const records = req.body.records;
   if (!Array.isArray(records)) {
     return res.status(400).json({ error: 'records must be an array' });
@@ -1106,6 +1169,70 @@ app.post('/api/attendance', (req, res) => {
     );
   });
 });
+
+app.post('/api/attendance', (req, res) => {
+  const records = req.body.records;
+  if (!Array.isArray(records) || records.length === 0) {
+    return res.status(400).json({ error: 'records must be a non-empty array' });
+  }
+
+  const theDate = records[0]?.date;
+  if (!theDate) return res.status(400).json({ error: 'Invalid date' });
+
+  const year = new Date(theDate).getFullYear();
+  const month = new Date(theDate).getMonth() + 1;
+  const day = new Date(theDate).getDate();
+  const dayColumn = `d${day}`;
+
+  db.beginTransaction((err) => {
+    if (err) {
+      console.error('Transaction begin error:', err);
+      return res.status(500).json({ error: 'Failed to begin transaction' });
+    }
+
+    // Prepare update statements
+    const queries = records.map((r) => {
+      const statusBit = r.status === 'present' ? 1 : 0; // store as BIT
+      const staffId = r.staffId;
+      const ot = r.ot || 0;
+
+      return new Promise((resolve, reject) => {
+        const sql = `
+          INSERT INTO staff_monthly_attendance (staffid, year, month, ${dayColumn}, ot)
+          VALUES (?, ?, ?, b'${statusBit}', ?)
+          ON DUPLICATE KEY UPDATE
+            ${dayColumn} = b'${statusBit}',
+            ot = VALUES(ot)
+        `;
+        db.query(sql, [staffId, year, month, ot], (err, result) => {
+          if (err) {
+            console.error('Insert/Update error:', err);
+            return reject(err);
+          }
+          resolve(result);
+        });
+      });
+    });
+
+    Promise.all(queries)
+      .then((results) => {
+        db.commit((errCommit) => {
+          if (errCommit) {
+            console.error('Commit error:', errCommit);
+            return db.rollback(() => res.status(500).json({ error: 'Failed to commit transaction' }));
+          }
+          return res.json({ success: true, updated: results.length });
+        });
+      })
+      .catch((errAny) => {
+        db.rollback(() => {
+          console.error('Rollback due to error:', errAny);
+          return res.status(500).json({ error: 'Failed to process attendance records', details: errAny.message });
+        });
+      });
+  });
+});
+
 
 app.post('/api/verify-secret', (req, res) => {
   const { secretKey } = req.body;
