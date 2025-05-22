@@ -1195,11 +1195,12 @@ app.post('/api/attendance', (req, res) => {
       const statusBit = r.status ? 1 : 0; // store as BIT
       const staffId = r.staffId;
       const ot = r.ot || 0;
+      const bonus = r.bonus;
 
       return new Promise((resolve, reject) => {
         const sql = `
-          INSERT INTO staff_monthly_attendance (staffid, year, month, ${dayColumn}, ot)
-          VALUES (?, ?, ?, b'${statusBit}', ?)
+          INSERT INTO staff_monthly_attendance (staffid, year, month, ${dayColumn}, ot, bonus)
+          VALUES (?, ?, ?, b'${statusBit}', ?, ?)
           ON DUPLICATE KEY UPDATE
             ${dayColumn} = b'${statusBit}',
             ot = VALUES(ot)
