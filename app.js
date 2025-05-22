@@ -1199,15 +1199,13 @@ app.post('/api/attendance', (req, res) => {
       return new Promise((resolve, reject) => {
         const sql = `
           INSERT INTO staff_monthly_attendance (staffid, year, month, ${dayColumn}, ot, bonus)
-          VALUES (?, ?, ?, b?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            ${dayColumn} = b?,
+            ${dayColumn} = ?,
             ot = VALUES(ot),
             bonus = VALUES(bonus)
         `;
 
-        // values for INSERT: staffId, year, month, statusBit, ot, bonus
-        // values for UPDATE: statusBit (again)
         db.query(sql, [staffId, year, month, statusBit, ot, bonus, statusBit], (err, result) => {
           if (err) {
             console.error('Insert/Update error:', err);
@@ -1236,6 +1234,7 @@ app.post('/api/attendance', (req, res) => {
       });
   });
 });
+
 
 app.post('/api/verify-secret', (req, res) => {
   const { secretKey } = req.body;
