@@ -1190,22 +1190,25 @@ app.post('/api/attendance', (req, res) => {
       return res.status(500).json({ error: 'Failed to begin transaction' });
     }
 
-    // Prepare update statements
     const queries = records.map((r) => {
-      const statusBit = r.status ? 1 : 0; // store as BIT
+      const statusBit = r.status ? 1 : 0;
       const staffId = r.staffId;
       const ot = r.ot || 0;
-      const bonus = r.bonus;
+      const bonus = r.bonus || 0;
 
       return new Promise((resolve, reject) => {
         const sql = `
           INSERT INTO staff_monthly_attendance (staffid, year, month, ${dayColumn}, ot, bonus)
-          VALUES (?, ?, ?, b'${statusBit}', ?, ?)
+          VALUES (?, ?, ?, b?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            ${dayColumn} = b'${statusBit}',
-            ot = VALUES(ot)
+            ${dayColumn} = b?,
+            ot = VALUES(ot),
+            bonus = VALUES(bonus)
         `;
-        db.query(sql, [staffId, year, month, ot], (err, result) => {
+
+        // values for INSERT: staffId, year, month, statusBit, ot, bonus
+        // values for UPDATE: statusBit (again)
+        db.query(sql, [staffId, year, month, statusBit, ot, bonus, statusBit], (err, result) => {
           if (err) {
             console.error('Insert/Update error:', err);
             return reject(err);
@@ -1233,7 +1236,6 @@ app.post('/api/attendance', (req, res) => {
       });
   });
 });
-
 
 app.post('/api/verify-secret', (req, res) => {
   const { secretKey } = req.body;
