@@ -1071,7 +1071,7 @@ app.get('/api/attendance', (req, res) => {
       FIRSTNAME: s.FIRSTNAME,
       SURNAME: s.SURNAME,
       DEPARTMENT: s.DEPARTMENT,
-      attendance: s.is_present === 1, // true means absent
+      attendance: s.is_present === 0, // true means absent
       ot: s.ot,
       bonus: s.bonus,
       Year: year
@@ -1192,7 +1192,7 @@ app.post('/api/attendance', (req, res) => {
 
     // Prepare update statements
     const queries = records.map((r) => {
-      const statusBit = r.status === 'present' ? 1 : 0; // store as BIT
+      const statusBit = r.status ? 1 : 0; // store as BIT
       const staffId = r.staffId;
       const ot = r.ot || 0;
 
