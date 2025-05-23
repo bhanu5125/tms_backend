@@ -425,6 +425,7 @@ app.get('/api/export-salary', (req, res) => {
         { header: 'OT (In Days)', key: 'OT' },
         { header: 'OT Amount', key: 'OTAMOUNT' },
         { header: 'Bonus', key: 'Bonus' },
+        { header: 'TDS', key: 'TDS' },
         { header: 'Net Salary', key: 'NetSal' }
       ];
 
@@ -447,6 +448,7 @@ app.get('/api/export-salary', (req, res) => {
           OT: row.OT,
           OTAMOUNT: row.OTAMOUNT,
           Bonus: row.Bonus,
+          TDS: row.TDS,
           NetSal: row.NetSal
         });
       });
