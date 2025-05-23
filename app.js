@@ -330,7 +330,7 @@ const getParams = (req) => ({
   pDeptId: parseInt(req.query.deptId) || 0,
   pYear: parseInt(req.query.year) || new Date().getFullYear(),
   pMonth: parseInt(req.query.month) || new Date().getMonth() + 1,
-  pPEVal: parseInt(req.query.pPEVal) ?? 1;
+  pPEVal: parseInt(req.query.pPEVal) ?? 1,
 });
 
 const handleError = (res, error) => {
