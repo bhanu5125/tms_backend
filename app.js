@@ -105,132 +105,6 @@ function formatDate2ForMySQL(date) {
 }
 
 // API to handle form submission
-app.post("/api/submit-form1", (req, res) => {
-  const { tblsourcebk, staff } = req.body;
-  console.log(req.body)
-  // Format datetime values for MySQL
-  const createdDate = formatDate2ForMySQL(new Date());
-  const modifiedDate = formatDate2ForMySQL(staff.ModifiedDate);
-
-  // Insert into tblsourcebk
-  const tblsourcebkQuery = `
-    INSERT INTO tblsourcebk (
-      Emp_ID, Emp_FName, Emp_LName, Emp_Father_Name, Emp_Address, Aadhar_Number, Emp_P_No, Emp_A_No, DOJ, DOR, Bank_Acc_No, IFSC_Code, Dept, Bank_Name
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
-  const tblsourcebkValues = [
-    tblsourcebk.Emp_ID,
-    tblsourcebk.Emp_FName,
-    tblsourcebk.Emp_LName,
-    tblsourcebk.Emp_Father_Name,
-    tblsourcebk.Emp_Address,
-    tblsourcebk.Aadhar_Number,
-    tblsourcebk.Emp_P_No,
-    tblsourcebk.Emp_A_No,
-    formatDate2ForMySQL(tblsourcebk.DOJ),
-    formatDate2ForMySQL(tblsourcebk.DOR),
-    tblsourcebk.Bank_Acc_No,
-    tblsourcebk.IFSC_Code,
-    tblsourcebk.Dept,
-    tblsourcebk.Bank_Name,
-  ];
-
-  // Insert into staff
-  const staffQuery = `
-    INSERT INTO staff (
-      Code, FirstName, LastName, Guardian, Address, PrimaryPhone, SecondaryPhone, IsActive, StaffType, DeptId, CreatedDate, ModifiedDate, CreatedBy, ModifiedBy
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
-  const staffValues = [
-    staff.Code,
-    staff.FirstName,
-    staff.LastName,
-    staff.Guardian,
-    staff.Address,
-    staff.PrimaryPhone,
-    staff.SecondaryPhone,
-    staff.IsActive,
-    staff.StaffType,
-    staff.DeptId,
-    createdDate, // Use formatted datetime
-    modifiedDate, // Use formatted datetime
-    1,
-    1
-  ];
-
-  // Execute queries
-  db.query(tblsourcebkQuery, tblsourcebkValues, (err, result) => {
-    if (err) {
-      console.error("Error inserting into tblsourcebk:", err);
-      return res.status(500).json({ error: "Failed to insert into tblsourcebk" });
-    }
-
-    db.query(staffQuery, staffValues, (err, result) => {
-      if (err) {
-        console.error("Error inserting into staff:", err);
-        return res.status(500).json({ error: "Failed to insert into staff" });
-      }
-
-      res.status(200).json({ message: "Form submitted successfully" });
-    });
-  });
-});
-
-app.post("/api/submit-form2", (req, res) => {
-  const { tblsourcebk, staff } = req.body;
-
-  // Validate required fields
-  if (!staff.DeptId || !staff.FirstName || !staff.LastName || !staff.PrimaryPhone) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
-
-  // Prepare parameters for stored procedure
-  const params = [
-    staff.FirstName,
-    staff.LastName,
-    staff.Guardian || null,
-    staff.Address || null,
-    staff.PrimaryPhone,
-    staff.SecondaryPhone || null,
-    staff.StaffType === 0 ? null : staff.StaffType,
-    staff.DeptId,
-    1, // CreatedBy
-    1, // ModifiedBy
-    tblsourcebk.Bank_Acc_No,
-    tblsourcebk.Bank_Name || null,
-    tblsourcebk.Branch || null,
-    tblsourcebk.IFSC_Code,
-    tblsourcebk.Aadhar_Number,
-    staff.DOJ ? formatDateForMySQL(new Date(staff.DOJ)) : null,
-    tblsourcebk.Otherinfo || null,
-    { type: db.types.INT, dir: db.types.OUT } // pSId OUT parameter
-  ];
-
-  // Call stored procedure
-  const query = `
-    CALL sp_AddStaff(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-    SELECT @pSId AS pSId;
-  `;
-
-  db.query(query, params, (err, results) => {
-    if (err) {
-      console.error("Error calling stored procedure:", err);
-      return res.status(500).json({ error: "Database error" });
-    }
-
-    const pSId = results[1][0].pSId;
-    
-    if (pSId === 10000) {
-      return res.status(409).json({ error: "Staff already exists" });
-    }
-
-    res.status(200).json({ 
-      message: "Staff added successfully",
-      staffId: pSId 
-    });
-  });
-});
-
 app.post("/api/submit-form", (req, res) => {
   const { tblsourcebk, staff } = req.body;
 
@@ -339,46 +213,6 @@ app.get("/api/get-staff/:code", (req, res) => {
 function formatDateForFrontend(date) {
   return new Date(date).toISOString().split('T')[0];
 }
-
-// GET Employee by Code
-app.get("/api/get-staff1/:code", (req, res) => {
-  const { code } = req.params;
-
-  const query = `
-    SELECT s.*, t.* 
-    FROM staff s
-    INNER JOIN tblsourcebk t ON s.Code = t.Emp_ID
-    WHERE s.Code = ?
-  `;
-
-  db.query(query, [code], (err, results) => {
-    if (err) return res.status(500).json({ error: "Database error" });
-    if (results.length === 0) return res.status(404).json({ error: "Not found" });
-    
-    const staffData = results[0];
-    res.json({
-      staff: {
-        Code: staffData.Code,
-        FirstName: staffData.FirstName,
-        LastName: staffData.LastName,
-        Guardian: staffData.Guardian,
-        Address: staffData.Address,
-        PrimaryPhone: staffData.PrimaryPhone,
-        SecondaryPhone: staffData.SecondaryPhone,
-        IsActive: staffData.IsActive,
-        DOJ: staffData.DOJ,
-        DOR: staffData.DOR,
-        DeptId: staffData.DeptId
-      },
-      tblsourcebk: {
-        Aadhar_Number: staffData.Aadhar_Number,
-        Bank_Acc_No: staffData.Bank_Acc_No,
-        Bank_Name: staffData.Bank_Name,
-        IFSC_Code: staffData.IFSC_Code
-      }
-    });
-  });
-});
 
 const generateReport = async (res, data, columns, filename) => {
   const workbook = new ExcelJS.Workbook();
@@ -496,7 +330,7 @@ const getParams = (req) => ({
   pDeptId: parseInt(req.query.deptId) || 0,
   pYear: parseInt(req.query.year) || new Date().getFullYear(),
   pMonth: parseInt(req.query.month) || new Date().getMonth() + 1,
-  pPEVal: 0
+  pPEVal: parseInt(req.query.pPEVal) || 1,
 });
 
 const handleError = (res, error) => {
