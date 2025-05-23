@@ -626,7 +626,7 @@ app.get('/api/get-report', (req, res) => {
   const pDeptId = parseInt(req.query.deptId) || 0;
   const pYear = parseInt(req.query.year) || new Date().getFullYear();
   const pMonth = parseInt(req.query.month) || (new Date().getMonth() + 1);
-  const pPEVal = parseInt(req.query.pPEVal) || 0;
+  const pPEVal = parseInt(req.query.pPEVal) || 1;
 
   const sql = "CALL sp_GenSalReport(?, ?, ?, ?, ?)";
   db.query(sql, [pKey, pDeptId, pYear, pMonth, pPEVal], (error, results) => {
