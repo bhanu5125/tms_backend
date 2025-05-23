@@ -330,7 +330,7 @@ const getParams = (req) => ({
   pDeptId: parseInt(req.query.deptId) || 0,
   pYear: parseInt(req.query.year) || new Date().getFullYear(),
   pMonth: parseInt(req.query.month) || new Date().getMonth() + 1,
-  pPEVal: parseInt(req.query.pPEVal) || 1,
+  pPEVal: parseInt(req.query.pPEVal) ?? 1;
 });
 
 const handleError = (res, error) => {
@@ -460,7 +460,8 @@ app.get('/api/get-report', (req, res) => {
   const pDeptId = parseInt(req.query.deptId) || 0;
   const pYear = parseInt(req.query.year) || new Date().getFullYear();
   const pMonth = parseInt(req.query.month) || (new Date().getMonth() + 1);
-  const pPEVal = parseInt(req.query.pPEVal) || 1;
+  const pPEVal = parseInt(req.query.pPEVal) ?? 1;
+  console.log(pPEVal);
 
   const sql = "CALL sp_GenSalReport(?, ?, ?, ?, ?)";
   db.query(sql, [pKey, pDeptId, pYear, pMonth, pPEVal], (error, results) => {
@@ -704,92 +705,6 @@ app.put("/api/update-staff/:code", async (req, res) => {
   }
 });
 
-app.put("/api/update-staff1/:code", (req, res) => {
-  const { code } = req.params;
-  const { tblsourcebk, staff } = req.body;
-
-  const updateTblsourcebk = `
-    UPDATE tblsourcebk SET
-      Emp_FName = ?,
-      Emp_LName = ?,
-      Emp_Father_Name = ?,
-      Emp_Address = ?,
-      Aadhar_Number = ?,
-      Emp_P_No = ?,
-      Emp_A_No = ?,
-      DOJ = ?,
-      DOR = ?,
-      Bank_Acc_No = ?,
-      IFSC_Code = ?,
-      Dept = ?,
-      Bank_Name = ?
-    WHERE Emp_ID = ?
-  `;
-
-  const updateStaff = `
-    UPDATE staff SET
-      FirstName = ?,
-      LastName = ?,
-      Guardian = ?,
-      Address = ?,
-      PrimaryPhone = ?,
-      SecondaryPhone = ?,
-      IsActive = ?,
-      StaffType = ?,
-      DeptId = ?,
-      ModifiedDate = ?,
-      ModifiedBy = ?
-    WHERE Code = ?
-  `;
-
-  const tblsourcebkParams = [
-    tblsourcebk.Emp_FName,
-    tblsourcebk.Emp_LName,
-    tblsourcebk.Emp_Father_Name,
-    tblsourcebk.Emp_Address,
-    tblsourcebk.Aadhar_Number,
-    tblsourcebk.Emp_P_No,
-    tblsourcebk.Emp_A_No,
-    formatDateForMySQL(tblsourcebk.DOJ),
-    formatDateForMySQL(tblsourcebk.DOR), // Add Date of Resignation
-    tblsourcebk.Bank_Acc_No,
-    tblsourcebk.IFSC_Code,
-    tblsourcebk.Dept,
-    tblsourcebk.Bank_Name,
-    code,
-  ];
-
-  const staffParams = [
-    staff.FirstName,
-    staff.LastName,
-    staff.Guardian,
-    staff.Address,
-    staff.PrimaryPhone,
-    staff.SecondaryPhone,
-    staff.IsActive,
-    staff.StaffType || null, // Add StaffType (use a default value if not provided)
-    staff.DeptId,
-    formatDate2ForMySQL(new Date()), // ModifiedDate
-    1, // ModifiedBy
-    code, // Code (identifier for the WHERE clause)
-  ];
-
-  db.query(updateTblsourcebk, tblsourcebkParams, (err, result) => {
-    if (err) {
-      console.error("Error updating tblsourcebk:", err); // Log the error
-      return res.status(500).json({ error: "Failed to update tblsourcebk" });
-    }
-
-    db.query(updateStaff, staffParams, (err, result) => {
-      if (err) {
-        console.error("Error updating staff:", err); // Log the error
-        return res.status(500).json({ error: "Failed to update staff" });
-      }
-      res.json({ message: "Employee updated successfully" });
-    });
-  });
-});
-
 // GET /api/attendance?date=YYYY-MM-DD&deptId=#
 const MONTH_COLS = {
   1:  'Jan',  2: 'Feb',  3: 'Mar',  4: 'Apr',
@@ -798,62 +713,6 @@ const MONTH_COLS = {
 };
 
 // 3) GET /api/attendance?date=YYYY-MM-DD&deptId=…
-// Improved backend routes for handling attendance data
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/attendance - Fetch attendance for a specific date
-app.get('/api/attendance1', (req, res) => {
-  const date = req.query.date;
-  const deptId = req.query.deptId;
-  console.log(date);
-
-  if (!date) {
-    return res.status(400).json({ error: 'date is required' });
-  }
-
-  let sql = `
-    SELECT
-      s.SId AS SID,
-      s.Code AS CODE,
-      s.FirstName AS FIRSTNAME,
-      s.LastName AS SURNAME,
-      d.DeptName AS DEPARTMENT,
-      ar.status,
-      COALESCE(ar.ot_hours, 0) AS ot_hours
-    FROM staff s
-    JOIN department d ON s.DeptId = d.ID
-    LEFT JOIN attendance_records ar ON s.SId = ar.StaffID AND ar.date = ?
-    WHERE s.IsActive = 1
-  `;
-  
-  const params = [date];
-  if (deptId) {
-    sql += ' AND s.DeptId = ?';
-    params.push(deptId);
-  }
-  sql += ' ORDER BY s.DeptId, s.Code';
-
-  db.query(sql, params, (err, rows) => {
-    if (err) {
-      console.error('GET /api/attendance error:', err);
-      return res.status(500).json({ error: 'Server error' });
-    }
-
-    const result = rows.map((s) => ({
-      SID: s.SID,
-      CODE: s.CODE,
-      FIRSTNAME: s.FIRSTNAME,
-      SURNAME: s.SURNAME,
-      DEPARTMENT: s.DEPARTMENT,
-      attendance: s.status === 'absent', // true means absent
-      ot: s.ot_hours || 0 ,
-      Year: date.split('-')[0]
-    }));
-
-    res.json(result);
-  });
-});
-
 app.get('/api/attendance', (req, res) => {
   const date = req.query.date;
   const deptId = req.query.deptId;
@@ -920,92 +779,6 @@ app.get('/api/attendance', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/attendance - Save attendance records
 // Body: { records:[ { staffId, date:'YYYY-MM-DD', status:'present'|'absent' }, … ] }
-app.post('/api/attendance1', (req, res) => {
-  const records = req.body.records;
-  if (!Array.isArray(records)) {
-    return res.status(400).json({ error: 'records must be an array' });
-  }
-
-  const theDate = records[0]?.date;
-  if (!theDate) return res.status(400).json({ error: 'Invalid date' });
-
-  db.beginTransaction((err) => {
-    if (err) {
-      console.error('Transaction begin error:', err);
-      return res.status(500).json({ error: 'Failed to begin transaction' });
-    }
-
-    // 1) Delete existing records for that date
-    db.query(
-      'DELETE FROM attendance_records WHERE date = ?',
-      [theDate],
-      (errDel) => {
-        if (errDel) {
-          console.error('Delete error:', errDel);
-          return db.rollback(() => res.status(500).json({ 
-            error: 'Failed to delete existing records',
-            details: errDel.message 
-          }));
-        }
-
-        // 2) Prepare values for insertion
-        const vals = records.map((r) => [
-          r.staffId,
-          r.date,
-          r.status,
-          r.ot || 0
-        ]);
-        console.log(vals)
-
-        // 3) Only proceed if we have records to insert
-        if (vals.length === 0) {
-          return db.commit((errCommit) => {
-            if (errCommit) {
-              console.error('Commit error (empty):', errCommit);
-              return db.rollback(() => res.status(500).json({ 
-                error: 'Failed to commit empty transaction' 
-              }));
-            }
-            return res.json({ success: true, message: 'No records to insert' });
-          });
-        }
-
-        // 4) Insert new records
-        db.query(
-          `INSERT INTO attendance_records 
-           (StaffID, date, status, ot_hours) 
-           VALUES ?`,
-          [vals],
-          (errIns, result) => {
-            if (errIns) {
-              console.error('Insert error:', errIns);
-              return db.rollback(() => res.status(500).json({ 
-                error: 'Failed to insert records',
-                details: errIns.message 
-              }));
-            }
-
-            // 5) Commit the transaction
-            db.commit((errCommit) => {
-              if (errCommit) {
-                console.error('Commit error:', errCommit);
-                return db.rollback(() => res.status(500).json({ 
-                  error: 'Failed to commit transaction' 
-                }));
-              }
-              console.log('Insert successful:', result);
-              return res.json({ 
-                success: true, 
-                inserted: result.affectedRows 
-              });
-            });
-          }
-        );
-      }
-    );
-  });
-});
-
 app.post('/api/attendance', (req, res) => {
   const records = req.body.records;
   if (!Array.isArray(records) || records.length === 0) {
