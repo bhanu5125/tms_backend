@@ -1,11 +1,11 @@
 const mysql = require('mysql2');
 
-const connection = mysql.createConnection({
-    host: 'database-1.cqj8amwoqe29.us-east-1.rds.amazonaws.com',
+const connection = mysql.createPool({
+    host: 'mysql.trafficcounting.in',
     port: '3306',
-    user: 'admin',
-    password: 'Bhanu$12$',
-    database: 'sms',
+    user: 'traffic_tcs_test',
+    password: 'Htpl@123',
+    database: 'traffic_tcs_test',
     waitForConnections: true,
     multipleStatements: true,
     connectionLimit: 10,
@@ -13,12 +13,13 @@ const connection = mysql.createConnection({
 });
 
 // Connect to MySQL
-connection.connect((err) => {
+connection.getConnection((err, con) => {
     if (err) {
         console.error('Error connecting to MySQL:', err.message);
-        return;
+    } else {
+        console.log('Connected to MySQL database via pool!');
+        con.release(); // release to pool
     }
-    console.log('Connected to MySQL database!');
 });
 
 module.exports = connection;
