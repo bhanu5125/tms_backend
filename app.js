@@ -5,11 +5,17 @@ const cors = require('cors');
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const app = express();
-const PORT = 5000;
-app.use(cors());
-app.use(express.json());
+const PORT = 8000;
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
 const ExcelJS = require('exceljs');
-const JWT_SECRET = "your-secret-key"; 
+const JWT_SECRET = "your-secret-key";
+app.use(cors({
+  origin: ['http://localhost:5174', 'http://localhost:5173', 'https://dev.trafficcounting.in', 'https://dev.trafficcounting.in'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 
 // List of tables
 const tables = [
@@ -39,7 +45,7 @@ app.get("/get/:table", (req, res) => {
 // Get Staff Data with Department Mapping
 app.get("/api/getstaff", (req, res) => {
   const query = `
-    SELECT 
+    SELECT
       s.SId,
       s.Code,
       s.FirstName,
@@ -48,7 +54,7 @@ app.get("/api/getstaff", (req, res) => {
       s.Address,
       s.PrimaryPhone,
       s.SecondaryPhone,
-      CASE 
+      CASE
           WHEN s.IsActive = BINARY 0x01 THEN 'InActive'
           ELSE 'Active'
       END AS IsActive,
@@ -72,122 +78,105 @@ app.get("/api/getstaff", (req, res) => {
 });
 
 const formatDateForMySQL = (date) => {
-  const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC +5:30
-  const istDate = new Date(new Date(date).getTime() + istOffset);
-  
-  const day = String(istDate.getDate()).padStart(2, "0");
-  const month = String(istDate.getMonth() + 1).padStart(2, "0"); // Months are 0-based
-  const year = istDate.getFullYear();
-
-  return `${day}-${month}-${year}`;
-};
-function formatDate2ForMySQL(date) {
   if (!date) return null;
 
-  // If the input is already a Date object, use it directly
-  const jsDate = date instanceof Date ? date : new Date(date);
+  // If already in YYYY-MM-DD format, return as-is
+  if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return date;
+  }
 
-  // Extract year, month, day, hours, minutes, and seconds
-  const year = jsDate.getFullYear();
-  const month = String(jsDate.getMonth() + 1).padStart(2, "0"); // Months are 0-based
-  const day = String(jsDate.getDate()).padStart(2, "0");
-  const hours = String(jsDate.getHours()).padStart(2, "0");
-  const minutes = String(jsDate.getMinutes()).padStart(2, "0");
-  const seconds = String(jsDate.getSeconds()).padStart(2, "0");
+  // If ISO string (e.g., "2020-01-06T00:00:00.000Z"), extract date part
+  if (typeof date === 'string' && date.includes('T')) {
+    return date.split('T')[0];
+  }
 
-  // Format as YYYY-MM-DD HH:MM:SS
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
+  // Otherwise parse and format
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+};
 
 // API to handle form submission
 app.post("/api/submit-form", (req, res) => {
   const { tblsourcebk, staff } = req.body;
-  console.log(req.body)
-  // Format datetime values for MySQL
-  const createdDate = formatDate2ForMySQL(new Date());
-  const modifiedDate = formatDate2ForMySQL(staff.ModifiedDate);
 
-  // Insert into tblsourcebk
-  const tblsourcebkQuery = `
-    INSERT INTO tblsourcebk (
-      Emp_ID, Emp_FName, Emp_LName, Emp_Father_Name, Emp_Address, Aadhar_Number, Emp_P_No, Emp_A_No, DOJ, DOR, Bank_Acc_No, IFSC_Code, Dept, Bank_Name
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
-  const tblsourcebkValues = [
-    tblsourcebk.Emp_ID,
-    tblsourcebk.Emp_FName,
-    tblsourcebk.Emp_LName,
-    tblsourcebk.Emp_Father_Name,
-    tblsourcebk.Emp_Address,
-    tblsourcebk.Aadhar_Number,
-    tblsourcebk.Emp_P_No,
-    tblsourcebk.Emp_A_No,
-    formatDate2ForMySQL(tblsourcebk.DOJ),
-    formatDate2ForMySQL(tblsourcebk.DOR),
-    tblsourcebk.Bank_Acc_No,
-    tblsourcebk.IFSC_Code,
-    tblsourcebk.Dept,
-    tblsourcebk.Bank_Name,
-  ];
+  console.log("Received body:", req.body);
 
-  // Insert into staff
-  const staffQuery = `
-    INSERT INTO staff (
-      Code, FirstName, LastName, Guardian, Address, PrimaryPhone, SecondaryPhone, IsActive, StaffType, DeptId, CreatedDate, ModifiedDate, CreatedBy, ModifiedBy
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  // Validate required fields - you can add more robust validation as needed
+  if (
+    !staff.FirstName ||
+    !staff.LastName ||
+    !staff.PrimaryPhone ||
+    !staff.DeptId ||
+    !tblsourcebk.Bank_Acc_No
+  ) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+
+  // Prepare CALL statement with parameters
+  const callProcedure = `
+    CALL sp_AddStaff(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @pSId);
+    SELECT @pSId as StaffId;
   `;
-  const staffValues = [
-    staff.Code,
+
+  // Map input fields properly, using safe fallbacks where necessary
+  const procedureParams = [
     staff.FirstName,
     staff.LastName,
-    staff.Guardian,
-    staff.Address,
+    staff.Guardian || "",
+    staff.Address || "",
     staff.PrimaryPhone,
-    staff.SecondaryPhone,
-    staff.IsActive,
-    staff.StaffType,
+    staff.SecondaryPhone || "",
+    staff.StaffType === 0 ? null : staff.StaffType ,
     staff.DeptId,
-    createdDate, // Use formatted datetime
-    modifiedDate, // Use formatted datetime
-    1,
-    1
+    1, // CreatedBy, adjust accordingly
+    1, // ModifiedBy, adjust accordingly
+    tblsourcebk.Bank_Acc_No,
+    tblsourcebk.Bank_Name || "",
+    tblsourcebk.Branch || "", // Added Branch from tblsourcebk for completeness
+    tblsourcebk.IFSC_Code || "",
+    tblsourcebk.Aadhar_Number || "",
+    tblsourcebk.DOJ ? new Date(tblsourcebk.DOJ) : null, // Date parsing safely
+    tblsourcebk.Otherinfo || "", // Passing Otherinfo if provided
   ];
+  console.log(procedureParams);
 
-  // Execute queries
-  db.query(tblsourcebkQuery, tblsourcebkValues, (err, result) => {
+  db.query(callProcedure, procedureParams, (err, results) => {
     if (err) {
-      console.error("Error inserting into tblsourcebk:", err);
-      return res.status(500).json({ error: "Failed to insert into tblsourcebk" });
+      console.error("Error calling stored procedure:", err);
+      return res.status(500).json({ error: "Failed to execute stored procedure" });
     }
 
-    db.query(staffQuery, staffValues, (err, result) => {
-      if (err) {
-        console.error("Error inserting into staff:", err);
-        return res.status(500).json({ error: "Failed to insert into staff" });
-      }
+    // The results array: first element is result of CALL, second is SELECT @pSId
+    const staffIdResult = results[1]; // Second result set contains SELECT @pSId
+    const returnedStaffId = staffIdResult[0]?.StaffId;
 
-      res.status(200).json({ message: "Form submitted successfully" });
+    if (returnedStaffId === 10000) {
+      return res.status(400).json({ error: "Staff already exists" });
+    }
+
+    return res.status(200).json({
+      message: "Staff added successfully",
+      staffId: returnedStaffId,
     });
   });
 });
 
-// GET Employee by Code
 app.get("/api/get-staff/:code", (req, res) => {
   const { code } = req.params;
 
-  const query = `
-    SELECT s.*, t.* 
-    FROM staff s
-    INNER JOIN tblsourcebk t ON s.Code = t.Emp_ID
-    WHERE s.Code = ?
-  `;
+  const query = `CALL sp_GetStaffDetailsByCode(?);`;
 
   db.query(query, [code], (err, results) => {
     if (err) return res.status(500).json({ error: "Database error" });
-    if (results.length === 0) return res.status(404).json({ error: "Not found" });
-    
-    const staffData = results[0];
-    res.json({
+    if (results[0].length === 0) return res.status(404).json({ error: "Not found" });
+
+    const staffData = results[0][0];
+
+    const responseData = {
       staff: {
         Code: staffData.Code,
         FirstName: staffData.FirstName,
@@ -197,30 +186,40 @@ app.get("/api/get-staff/:code", (req, res) => {
         PrimaryPhone: staffData.PrimaryPhone,
         SecondaryPhone: staffData.SecondaryPhone,
         IsActive: staffData.IsActive,
-        DOJ: staffData.DOJ,
-        DOR: staffData.DOR,
-        DeptId: staffData.DeptId
+        DeptId: staffData.DeptID,
+        StaffType: staffData.StaffType,
+        DOJ: staffData.DOJ ? formatDateForMySQL(staffData.DOJ) : null,
+        DOR: staffData.DOR ? formatDateForMySQL(staffData.DOR) : null
       },
       tblsourcebk: {
-        Aadhar_Number: staffData.Aadhar_Number,
-        Bank_Acc_No: staffData.Bank_Acc_No,
-        Bank_Name: staffData.Bank_Name,
-        IFSC_Code: staffData.IFSC_Code
-      }
-    });
+        Aadhar_Number: staffData.Aadhar,
+        Bank_Acc_No: staffData.AcctNo,
+        Bank_Name: staffData.BankName,
+        IFSC_Code: staffData.IFSC,
+        Branch: staffData.Branch
+      },
+      resignationReason: staffData.ResignationReason
+    };
+
+    res.json(responseData);
   });
 });
+
+// Add date formatting helper
+function formatDateForFrontend(date) {
+  return new Date(date).toISOString().split('T')[0];
+}
 
 const generateReport = async (res, data, columns, filename) => {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('SalReport');
-  
+
   worksheet.columns = columns;
   data.forEach(row => worksheet.addRow(row));
-  
-  res.setHeader('Content-Type', 
+
+  res.setHeader('Content-Type',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', 
+  res.setHeader('Content-Disposition',
     `attachment; filename=${filename}-${Date.now()}.xlsx`);
 
   await workbook.xlsx.write(res);
@@ -229,15 +228,15 @@ const generateReport = async (res, data, columns, filename) => {
 
 app.get('/api/export-salary', (req, res) => {
   const { pKey, pDeptId, pYear, pMonth, pPEVal } = getParams(req);
-  
-  db.query("CALL sp_GenSalReport(?, ?, ?, ?, ?)", 
-    [pKey, pDeptId, pYear, pMonth, pPEVal], 
+
+  db.query("CALL sp_GenSalReport(?, ?, ?, ?, ?)",
+    [pKey, pDeptId, pYear, pMonth, pPEVal],
     async (error, results) => {
       if (error) return handleError(res, error);
-      
+
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet('SalReport');
-      
+
       // Set columns
       worksheet.columns = [
         { header: 'SNo', key: 'SNo' },
@@ -256,6 +255,7 @@ app.get('/api/export-salary', (req, res) => {
         { header: 'OT (In Days)', key: 'OT' },
         { header: 'OT Amount', key: 'OTAMOUNT' },
         { header: 'Bonus', key: 'Bonus' },
+        { header: 'TDS', key: 'TDS' },
         { header: 'Net Salary', key: 'NetSal' }
       ];
 
@@ -278,6 +278,7 @@ app.get('/api/export-salary', (req, res) => {
           OT: row.OT,
           OTAMOUNT: row.OTAMOUNT,
           Bonus: row.Bonus,
+          TDS: row.TDS,
           NetSal: row.NetSal
         });
       });
@@ -302,8 +303,8 @@ app.get('/api/export-bank', (req, res) => {
   const { pKey, pDeptId, pYear, pMonth, pPEVal } = getParams(req);
   console.log("Bank");
 
-  db.query("CALL sp_GenSalReport(?, ?, ?, ?, ?)", 
-    [pKey, pDeptId, pYear, pMonth, pPEVal], 
+  db.query("CALL sp_GenSalReport(?, ?, ?, ?, ?)",
+    [pKey, pDeptId, pYear, pMonth, pPEVal],
     async (error, results) => {
       if (error) return handleError(res, error);
 
@@ -314,18 +315,18 @@ app.get('/api/export-bank', (req, res) => {
         { header: 'Name', key: 'Name' },
         { header: 'Net Salary', key: 'NetSal' },
       ];
-      
+
       await generateReport(res, results[0], bankColumns, 'HTPLSalBankReport');
   });
 });
 
 // Helper functions
 const getParams = (req) => ({
-  pKey: "Hr!$h!kesh",
+  pKey: req.query.pKey,
   pDeptId: parseInt(req.query.deptId) || 0,
   pYear: parseInt(req.query.year) || new Date().getFullYear(),
   pMonth: parseInt(req.query.month) || new Date().getMonth() + 1,
-  pPEVal: 0
+  pPEVal: parseInt(req.query.pPEVal) ?? 1,
 });
 
 const handleError = (res, error) => {
@@ -334,7 +335,7 @@ const handleError = (res, error) => {
 };
 
 app.get("/api/get-salary", (req, res) => {
-  const pKey = "Hr!$h!kesh";
+  const pKey = req.params.pKey;
   const did = 0;
 
   db.query("CALL sp_GetStaffSalary(?, ?)", [pKey, did], (error, results) => {
@@ -352,14 +353,14 @@ app.get('/api/get-payslip', async (req, res) => {
     const pYear = req.query.year || new Date().getFullYear();
     const pMonth = req.query.month || new Date().getMonth() + 1;
 
-   db.query('CALL sp_GetStaffPaySlips(?, ?, ?)', [deptId, pYear, pMonth] , (error, results) => { 
+   db.query('CALL sp_GetStaffPaySlips(?, ?, ?)', [deptId, pYear, pMonth] , (error, results) => {
     if (error) {
       console.error("Error calling sp_GetStaffPaySlips:", error);
       return res.status(500).json({ error: "Database error" });
     }
     res.json(results[0]);
-    });  
-    
+    });
+
   } catch (error) {
     console.error('Error fetching salary data:', error)
     res.status(500).json({ error: 'Internal Server Error' });
@@ -367,81 +368,83 @@ app.get('/api/get-payslip', async (req, res) => {
 });
 
 app.put("/api/update-salaries", (req, res) => {
-  const expectedKey = "Hr!$h!kesh";
   const { key, employees } = req.body;
-  //console.log(req.body.employees[0])
-  
-  // Validate the request
-  if (key !== expectedKey) {
-    return res.status(401).json({ success: false, error: "Invalid authentication key" });
-  }
+  const expectedKey = key;
 
   if (!Array.isArray(employees) || employees.length === 0) {
     return res.status(400).json({ success: false, error: "No employee records provided" });
   }
 
-  // Begin transaction
-  db.beginTransaction(err => {
+  db.getConnection((err, connection) => {
     if (err) {
-      console.error("Transaction error:", err);
-      return res.status(500).json({ success: false, error: "Transaction error" });
+      console.error("Connection error:", err);
+      return res.status(500).json({ success: false, error: "Failed to connect to database" });
     }
 
-    // Clear previous updates
-    db.query("TRUNCATE TABLE updatedSalRecords", (err) => {
+    connection.beginTransaction(err => {
       if (err) {
-        return db.rollback(() => {
-          console.error("TRUNCATE error:", err);
-          res.status(500).json({ success: false, error: "Database error during TRUNCATE" });
-        });
+        connection.release();
+        console.error("Transaction error:", err);
+        return res.status(500).json({ success: false, error: "Transaction error" });
       }
 
-      // Prepare the values for bulk insert
-      const values = employees.map(employee => [
-        employee.SalId,
-        employee.StaffId,
-        employee.Salary,
-        employee.Pf_ESIon || 0,
-        employee.TDS || 0,
-      ]);
-
-      // Insert new updates
-      const insertQuery = `
-        INSERT INTO updatedSalRecords 
-          (SalId, StaffId, Salary, Pf_ESIon, TDS) 
-        VALUES ?`;
-      
-      db.query(insertQuery, [values], (err, insertResult) => {
+      connection.query("TRUNCATE TABLE updatedsalrecords", (err) => {
         if (err) {
-          return db.rollback(() => {
-            console.error("INSERT error:", err);
-            res.status(500).json({ success: false, error: "Database error during INSERT" });
+          return connection.rollback(() => {
+            connection.release();
+            console.error("TRUNCATE error:", err);
+            res.status(500).json({ success: false, error: "Database error during TRUNCATE" });
           });
         }
 
-        // Execute stored procedure
-        db.query("CALL sp_UpdateStaffSalary(?)", [expectedKey], (err, procResults) => {
+        const values = employees.map(employee => [
+          employee.SalId,
+          employee.StaffId,
+          employee.Salary,
+          employee.Pf_ESIon || 0,
+          employee.TDS || 0,
+        ]);
+
+        const insertQuery = `
+          INSERT INTO updatedsalrecords
+            (SalId, StaffId, Salary, Pf_ESIon, TDS)
+          VALUES ?
+        `;
+
+        connection.query(insertQuery, [values], (err, insertResult) => {
           if (err) {
-            return db.rollback(() => {
-              console.error("Procedure error:", err);
-              res.status(500).json({ success: false, error: "Database error during procedure execution" });
+            return connection.rollback(() => {
+              connection.release();
+              console.error("INSERT error:", err);
+              res.status(500).json({ success: false, error: "Database error during INSERT" });
             });
           }
 
-          // Commit transaction
-          db.commit(err => {
+          connection.query("CALL sp_UpdateStaffSalary(?)", [expectedKey], (err, procResults) => {
             if (err) {
-              return db.rollback(() => {
-                console.error("Commit error:", err);
-                res.status(500).json({ success: false, error: "Database error during commit" });
+              return connection.rollback(() => {
+                connection.release();
+                console.error("Procedure error:", err);
+                res.status(500).json({ success: false, error: "Database error during procedure execution" });
               });
             }
 
-            res.json({ 
-              success: true,
-              message: "Salaries updated successfully",
-              affectedRows: insertResult.affectedRows,
-              updatedData: procResults[0] 
+            connection.commit(err => {
+              if (err) {
+                return connection.rollback(() => {
+                  connection.release();
+                  console.error("Commit error:", err);
+                  res.status(500).json({ success: false, error: "Database error during commit" });
+                });
+              }
+
+              connection.release();
+              res.json({
+                success: true,
+                message: "Salaries updated successfully",
+                affectedRows: insertResult.affectedRows,
+                updatedData: procResults[0]
+              });
             });
           });
         });
@@ -450,12 +453,14 @@ app.put("/api/update-salaries", (req, res) => {
   });
 });
 
+
 app.get('/api/get-report', (req, res) => {
-  const pKey = "Hr!$h!kesh";
+  const pKey = req.query.pKey;
   const pDeptId = parseInt(req.query.deptId) || 0;
   const pYear = parseInt(req.query.year) || new Date().getFullYear();
   const pMonth = parseInt(req.query.month) || (new Date().getMonth() + 1);
-  const pPEVal = parseInt(req.query.pPEVal) || 0;
+  const pPEVal = parseInt(req.query.pPEVal) ?? 1;
+  console.log(pPEVal);
 
   const sql = "CALL sp_GenSalReport(?, ?, ?, ?, ?)";
   db.query(sql, [pKey, pDeptId, pYear, pMonth, pPEVal], (error, results) => {
@@ -523,6 +528,13 @@ app.post("/api/login", async (req, res) => {
         expiresIn: "1h",
       });
 
+      const updateQuery = "UPDATE user SET LastLoginDate = NOW(6) WHERE UserId = ?";
+      db.query(updateQuery, [user.UserId], (updateErr) => {
+        if (updateErr) {
+          console.error("Error updating LastLoginDate:", updateErr);
+          // Don't block login, just log the error
+        }
+      });
       const userData = {
         userId: user.UserId,
         username: user.Username,
@@ -641,90 +653,65 @@ app.put("/api/update-salary-calc/", (req, res) => {
   });
 });
 
-app.put("/api/update-staff/:code", (req, res) => {
+app.put("/api/update-staff/:code", async (req, res) => {
   const { code } = req.params;
-  const { tblsourcebk, staff } = req.body;
+  const { tblsourcebk, staff, resignationReason } = req.body;
 
-  const updateTblsourcebk = `
-    UPDATE tblsourcebk SET
-      Emp_FName = ?,
-      Emp_LName = ?,
-      Emp_Father_Name = ?,
-      Emp_Address = ?,
-      Aadhar_Number = ?,
-      Emp_P_No = ?,
-      Emp_A_No = ?,
-      DOJ = ?,
-      DOR = ?,
-      Bank_Acc_No = ?,
-      IFSC_Code = ?,
-      Dept = ?,
-      Bank_Name = ?
-    WHERE Emp_ID = ?
-  `;
+  try {
+    // Get department name
+    const [deptResult] = await db.promise().query(
+      'SELECT DeptName FROM department WHERE ID = ?',
+      [staff.DeptId]
+    );
 
-  const updateStaff = `
-    UPDATE staff SET
-      FirstName = ?,
-      LastName = ?,
-      Guardian = ?,
-      Address = ?,
-      PrimaryPhone = ?,
-      SecondaryPhone = ?,
-      IsActive = ?,
-      StaffType = ?,
-      DeptId = ?,
-      ModifiedDate = ?,
-      ModifiedBy = ?
-    WHERE Code = ?
-  `;
+    // AUTO-SET IsActive based on termination date
+    const isActive = staff.DOR ? 0 : (staff.IsActive ?? 1);
 
-  const tblsourcebkParams = [
-    tblsourcebk.Emp_FName,
-    tblsourcebk.Emp_LName,
-    tblsourcebk.Emp_Father_Name,
-    tblsourcebk.Emp_Address,
-    tblsourcebk.Aadhar_Number,
-    tblsourcebk.Emp_P_No,
-    tblsourcebk.Emp_A_No,
-    formatDateForMySQL(tblsourcebk.DOJ),
-    formatDateForMySQL(tblsourcebk.DOR), // Add Date of Resignation
-    tblsourcebk.Bank_Acc_No,
-    tblsourcebk.IFSC_Code,
-    tblsourcebk.Dept,
-    tblsourcebk.Bank_Name,
-    code,
-  ];
+    const params = [
+      code, // pCode
+      staff.FirstName,
+      staff.LastName,
+      staff.Guardian,
+      staff.Address,
+      staff.PrimaryPhone,
+      staff.SecondaryPhone,
+      staff.StaffType || null,
+      isActive, // Use computed isActive instead of staff.IsActive
+      1, // ModifiedBy
+      staff.DeptId,
+      deptResult[0]?.DeptName || '', // pDeptName
+      tblsourcebk.Bank_Acc_No,
+      tblsourcebk.Bank_Name,
+      tblsourcebk.Branch,
+      tblsourcebk.IFSC_Code,
+      tblsourcebk.Aadhar_Number,
+      staff.DOJ ? formatDateForMySQL(staff.DOJ) : null,
+      staff.DOR ? formatDateForMySQL(staff.DOR) : null,
+      resignationReason || null,
+      tblsourcebk.Otherinfo || null,
+    ];
 
-  const staffParams = [
-    staff.FirstName,
-    staff.LastName,
-    staff.Guardian,
-    staff.Address,
-    staff.PrimaryPhone,
-    staff.SecondaryPhone,
-    staff.IsActive,
-    staff.StaffType || null, // Add StaffType (use a default value if not provided)
-    staff.DeptId,
-    formatDate2ForMySQL(new Date()), // ModifiedDate
-    1, // ModifiedBy
-    code, // Code (identifier for the WHERE clause)
-  ];
+    const query = `CALL sp_UpdateStaffByCode(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, @pSuccess);
+                   SELECT @pSuccess AS pSuccess;`;
 
-  db.query(updateTblsourcebk, tblsourcebkParams, (err, result) => {
-    if (err) {
-      console.error("Error updating tblsourcebk:", err); // Log the error
-      return res.status(500).json({ error: "Failed to update tblsourcebk" });
+    const [results] = await db.promise().query(query, params);
+    const pSuccess = results[1][0].pSuccess;
+
+    if (pSuccess === 1) {
+      res.json({ message: "Staff updated successfully" });
+    } else {
+      const errorMap = {
+        '-1': 'Invalid date sequence: Start date must be after previous termination',
+        '-2': 'Termination date cannot be before start date'
+      };
+      res.status(400).json({
+        error: errorMap[pSuccess] || 'Update failed'
+      });
     }
-
-    db.query(updateStaff, staffParams, (err, result) => {
-      if (err) {
-        console.error("Error updating staff:", err); // Log the error
-        return res.status(500).json({ error: "Failed to update staff" });
-      }
-      res.json({ message: "Employee updated successfully" });
-    });
-  });
+  } catch (err) {
+    console.error("Update error:", err);
+    res.status(500).json({ error: "Database error" });
+  }
 });
 
 // GET /api/attendance?date=YYYY-MM-DD&deptId=#
@@ -734,19 +721,20 @@ const MONTH_COLS = {
   9:  'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'
 };
 
-// 3) GET /api/attendance?date=YYYY-MM-DD&deptId=…
-// Improved backend routes for handling attendance data
-
-// ─────────────────────────────────────────────────────────────────────────────
-// GET /api/attendance - Fetch attendance for a specific date
+// 3) GET /api/attendance?date=YYYY-MM-DD&deptId
 app.get('/api/attendance', (req, res) => {
   const date = req.query.date;
   const deptId = req.query.deptId;
-  console.log(date);
 
   if (!date) {
     return res.status(400).json({ error: 'date is required' });
   }
+
+  const [yyyy, mm, dd] = date.split('-').map(Number);
+  const year = yyyy;
+  const month = mm;
+  const day = dd;
+  const dayColumn = `d${day}`;
 
   let sql = `
     SELECT
@@ -754,16 +742,25 @@ app.get('/api/attendance', (req, res) => {
       s.Code AS CODE,
       s.FirstName AS FIRSTNAME,
       s.LastName AS SURNAME,
+      s.StaffType AS StaffType,
       d.DeptName AS DEPARTMENT,
-      ar.status,
-      COALESCE(ar.ot_hours, 0) AS ot_hours
+      COALESCE(sma.${dayColumn} + 0, 0) AS is_present,
+      sob.ot_days,
+      sob.ot
     FROM staff s
     JOIN department d ON s.DeptId = d.ID
-    LEFT JOIN attendance_records ar ON s.SId = ar.StaffID AND ar.date = ?
+    LEFT JOIN staff_monthly_attendance sma
+      ON s.SId = sma.staffid
+      AND sma.year = ?
+      AND sma.month = ?
+    LEFT JOIN staff_ot_bonus sob
+      ON s.SId = sob.staffid
+      AND sob.year = ?
+      AND sob.month = ?
     WHERE s.IsActive = 1
   `;
-  
-  const params = [date];
+
+  const params = [year, month, year, month];
   if (deptId) {
     sql += ' AND s.DeptId = ?';
     params.push(deptId);
@@ -776,114 +773,359 @@ app.get('/api/attendance', (req, res) => {
       return res.status(500).json({ error: 'Server error' });
     }
 
-    const result = rows.map((s) => ({
-      SID: s.SID,
-      CODE: s.CODE,
-      FIRSTNAME: s.FIRSTNAME,
-      SURNAME: s.SURNAME,
-      DEPARTMENT: s.DEPARTMENT,
-      attendance: s.status === 'absent', // true means absent
-      ot: s.ot_hours || 0 ,
-      Year: date.split('-')[0]
-    }));
+    const result = rows.map((s) => {
+      // Check if this specific day is an OT day
+      const otDays = s.ot_days ? s.ot_days.split(',').map(Number) : [];
+      const isOTDay = otDays.includes(day);
+
+      return {
+        SID: s.SID,
+        CODE: s.CODE,
+        FIRSTNAME: s.FIRSTNAME,
+        SURNAME: s.SURNAME,
+        StaffType: s.StaffType,
+        DEPARTMENT: s.DEPARTMENT,
+        attendance: s.is_present == 1 ? true : false,
+        Year: year,
+        isOT: isOTDay,
+        otCount: s.ot || 0
+      };
+    });
 
     res.json(result);
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// POST /api/attendance - Save attendance records
-// Body: { records:[ { staffId, date:'YYYY-MM-DD', status:'present'|'absent' }, … ] }
+// POST /api/attendance
 app.post('/api/attendance', (req, res) => {
   const records = req.body.records;
-  if (!Array.isArray(records)) {
-    return res.status(400).json({ error: 'records must be an array' });
+  if (!Array.isArray(records) || records.length === 0) {
+    return res.status(400).json({ error: 'records must be a non-empty array' });
   }
 
   const theDate = records[0]?.date;
-  if (!theDate) return res.status(400).json({ error: 'Invalid date' });
+  if (!theDate) {
+    return res.status(400).json({ error: 'Invalid date' });
+  }
 
-  db.beginTransaction((err) => {
-    if (err) {
-      console.error('Transaction begin error:', err);
-      return res.status(500).json({ error: 'Failed to begin transaction' });
+  const [yyyy, mm, dd] = theDate.split('-').map(Number);
+  const year = yyyy;
+  const month = mm;
+  const day = dd;
+  const dayColumn = `d${day}`;
+
+  db.getConnection((connErr, connection) => {
+    if (connErr) {
+      console.error('Connection error:', connErr);
+      return res.status(500).json({ error: 'Database connection failed' });
     }
 
-    // 1) Delete existing records for that date
-    db.query(
-      'DELETE FROM attendance_records WHERE date = ?',
-      [theDate],
-      (errDel) => {
-        if (errDel) {
-          console.error('Delete error:', errDel);
-          return db.rollback(() => res.status(500).json({ 
-            error: 'Failed to delete existing records',
-            details: errDel.message 
-          }));
-        }
-
-        // 2) Prepare values for insertion
-        const vals = records.map((r) => [
-          r.staffId,
-          r.date,
-          r.status,
-          r.ot || 0
-        ]);
-        console.log(vals)
-
-        // 3) Only proceed if we have records to insert
-        if (vals.length === 0) {
-          return db.commit((errCommit) => {
-            if (errCommit) {
-              console.error('Commit error (empty):', errCommit);
-              return db.rollback(() => res.status(500).json({ 
-                error: 'Failed to commit empty transaction' 
-              }));
-            }
-            return res.json({ success: true, message: 'No records to insert' });
-          });
-        }
-
-        // 4) Insert new records
-        db.query(
-          `INSERT INTO attendance_records 
-           (StaffID, date, status, ot_hours) 
-           VALUES ?`,
-          [vals],
-          (errIns, result) => {
-            if (errIns) {
-              console.error('Insert error:', errIns);
-              return db.rollback(() => res.status(500).json({ 
-                error: 'Failed to insert records',
-                details: errIns.message 
-              }));
-            }
-
-            // 5) Commit the transaction
-            db.commit((errCommit) => {
-              if (errCommit) {
-                console.error('Commit error:', errCommit);
-                return db.rollback(() => res.status(500).json({ 
-                  error: 'Failed to commit transaction' 
-                }));
-              }
-              console.log('Insert successful:', result);
-              return res.json({ 
-                success: true, 
-                inserted: result.affectedRows 
-              });
-            });
-          }
-        );
+    connection.beginTransaction((transErr) => {
+      if (transErr) {
+        console.error('Transaction begin error:', transErr);
+        connection.release();
+        return res.status(500).json({ error: 'Failed to begin transaction' });
       }
-    );
+
+      const updateQueries = records.map((r) => {
+        const staffId = r.staffId;
+        const statusBit = r.status ? 1 : 0;
+        const isOT = r.isOT === true; // frontend sends this
+
+        return new Promise((resolve, reject) => {
+          // STEP 1: ALWAYS save attendance first
+          const attendanceSql = `
+            INSERT INTO staff_monthly_attendance (staffid, year, month, ${dayColumn})
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE ${dayColumn} = ?
+          `;
+          const attendanceValues = [staffId, year, month, statusBit, statusBit];
+
+          connection.query(attendanceSql, attendanceValues, (err, result) => {
+            if (err) {
+              console.error('Insert/Update attendance error for staffId', staffId, ':', err);
+              return reject(err);
+            }
+
+            // STEP 2: Handle OT logic based on checkbox state
+            const selectSql = `
+              SELECT ot, ot_days
+              FROM staff_ot_bonus
+              WHERE staffid = ? AND year = ? AND month = ?
+            `;
+            connection.query(selectSql, [staffId, year, month], (err, rows) => {
+              if (err) {
+                console.error('Select OT error:', err);
+                return reject(err);
+              }
+
+              let ot = 0;
+              let otDays = [];
+
+              if (rows.length > 0) {
+                ot = rows[0].ot || 0;
+                otDays = rows[0].ot_days ? rows[0].ot_days.split(',').map(Number) : [];
+              }
+
+              // If OT checkbox is CHECKED
+              if (isOT) {
+                if (statusBit === 0) {
+                  // Present: Add OT day if not already added
+                  if (!otDays.includes(day)) {
+                    otDays.push(day);
+                    ot++;
+                  }
+                } else {
+                  // Absent: Remove OT day if exists
+                  if (otDays.includes(day)) {
+                    otDays = otDays.filter(d => d !== day);
+                    ot = Math.max(ot - 1, 0);
+                  }
+                }
+              } else {
+                // If OT checkbox is UNCHECKED - Remove this day from OT if it exists
+                if (otDays.includes(day)) {
+                  otDays = otDays.filter(d => d !== day);
+                  ot = Math.max(ot - 1, 0);
+                }
+              }
+
+              // If no OT days left and no record exists, just resolve
+              if (rows.length === 0 && otDays.length === 0) {
+                return resolve(result);
+              }
+
+              if (rows.length > 0) {
+                // Update existing OT record
+                const updateSql = `
+                  UPDATE staff_ot_bonus
+                  SET ot = ?, ot_days = ?
+                  WHERE staffid = ? AND year = ? AND month = ?
+                `;
+                connection.query(updateSql, [ot, otDays.length ? otDays.join(',') : null, staffId, year, month], (err, result) => {
+                  if (err) {
+                    console.error('Update OT error:', err);
+                    return reject(err);
+                  }
+                  resolve(result);
+                });
+              } else {
+                // Insert new OT record (only if there are OT days to add)
+                if (otDays.length > 0) {
+                  const insertSql = `
+                    INSERT INTO staff_ot_bonus (staffid, year, month, ot, ot_days)
+                    VALUES (?, ?, ?, ?, ?)
+                  `;
+                  connection.query(insertSql, [staffId, year, month, ot, otDays.join(',')], (err, result) => {
+                    if (err) {
+                      console.error('Insert OT error:', err);
+                      return reject(err);
+                    }
+                    resolve(result);
+                  });
+                } else {
+                  resolve(result);
+                }
+              }
+            });
+          });
+        });
+      });
+
+      Promise.all(updateQueries)
+        .then(() => {
+          connection.commit((commitErr) => {
+            if (commitErr) {
+              console.error('Commit error:', commitErr);
+              return connection.rollback(() => {
+                connection.release();
+                res.status(500).json({ error: 'Transaction commit failed' });
+              });
+            }
+
+            connection.release();
+            res.json({ success: true, updated: records.length });
+          });
+        })
+        .catch((queryErr) => {
+          console.error('Query failed, rolling back:', queryErr);
+          connection.rollback(() => {
+            connection.release();
+            res.status(500).json({ error: 'Failed to process attendance/OT records', details: queryErr.message });
+          });
+        });
+    });
+  });
+});
+
+// GET /api/ot-bonus
+app.get('/api/ot-bonus', (req, res) => {
+  let year = parseInt(req.query.year);
+  let month = parseInt(req.query.month);
+  let deptId = req.query.deptId;
+
+  if (!year || !month) {
+    const now = new Date();
+    year = now.getFullYear();
+    month = now.getMonth() + 1;
+  }
+
+  let sql = `
+    SELECT
+      s.SId AS SID,
+      s.Code AS CODE,
+      s.FirstName AS FIRSTNAME,
+      s.LastName AS SURNAME,
+      d.DeptName AS DEPARTMENT,
+      COALESCE(sma.ot, 0) AS ot,
+      COALESCE(sma.bonus, 0) AS bonus,
+      sma.ot_days AS ot_days
+    FROM staff s
+    JOIN department d ON s.DeptId = d.ID
+    LEFT JOIN staff_ot_bonus sma
+      ON s.SId = sma.staffid
+      AND sma.year = ?
+      AND sma.month = ?
+    WHERE s.IsActive = 1
+  `;
+
+  const params = [year, month];
+  if (deptId) {
+    sql += ' AND s.DeptId = ?';
+    params.push(deptId);
+  }
+
+  sql += ' ORDER BY s.DeptId, s.Code';
+
+  db.query(sql, params, (err, rows) => {
+    if (err) {
+      console.error('GET /api/ot-bonus error:', err);
+      return res.status(500).json({ error: 'Server error' });
+    }
+
+    res.json(rows.map((s) => ({
+      SID: s.SID,
+      CODE: s.CODE,
+      FIRSTNAME: s.FIRSTNAME,
+      SURNAME: s.SURNAME,
+      DEPARTMENT: s.DEPARTMENT,
+      ot: s.ot,
+      bonus: s.bonus,
+      ot_days: s.ot_days
+    })));
+  });
+});
+
+// POST /api/ot-bonus
+app.post('/api/ot-bonus', (req, res) => {
+  const records = req.body.records;
+
+  if (!Array.isArray(records) || records.length === 0) {
+    return res.status(400).json({ error: 'records must be a non-empty array' });
+  }
+
+  const year = records[0]?.year;
+  const month = records[0]?.month;
+
+  db.getConnection((connErr, connection) => {
+    if (connErr) {
+      console.error('Connection error:', connErr);
+      return res.status(500).json({ error: 'Database connection failed' });
+    }
+
+    connection.beginTransaction((transErr) => {
+      if (transErr) {
+        console.error('Transaction begin error:', transErr);
+        connection.release();
+        return res.status(500).json({ error: 'Failed to begin transaction' });
+      }
+
+      const updateQueries = records.map((r) => {
+        const staffId = r.staffId;
+        const bonus = r.bonus || 0;
+
+        return new Promise((resolve, reject) => {
+          // First check if record exists
+          const checkSql = `
+            SELECT staffid FROM staff_ot_bonus
+            WHERE staffid = ? AND year = ? AND month = ?
+          `;
+
+          connection.query(checkSql, [staffId, year, month], (err, rows) => {
+            if (err) {
+              console.error('Check error for staffId', staffId, ':', err);
+              return reject(err);
+            }
+
+            let sql, values;
+            if (rows.length > 0) {
+              // Record exists - only update bonus
+              sql = `
+                UPDATE staff_ot_bonus
+                SET bonus = ?
+                WHERE staffid = ? AND year = ? AND month = ?
+              `;
+              values = [bonus, staffId, year, month];
+            } else {
+              // Record doesn't exist - insert with ot=0
+              sql = `
+                INSERT INTO staff_ot_bonus (staffid, year, month, ot, bonus, ot_days)
+                VALUES (?, ?, ?, 0, ?, NULL)
+              `;
+              values = [staffId, year, month, bonus];
+            }
+
+            connection.query(sql, values, (err, result) => {
+              if (err) {
+                console.error('Insert/Update error for staffId', staffId, ':', err);
+                return reject(err);
+              }
+              resolve(result);
+            });
+          });
+        });
+      });
+
+      Promise.all(updateQueries)
+        .then(() => {
+          connection.commit((commitErr) => {
+            if (commitErr) {
+              console.error('Commit error:', commitErr);
+              return connection.rollback(() => {
+                connection.release();
+                res.status(500).json({ error: 'Transaction commit failed' });
+              });
+            }
+
+            connection.release();
+            res.json({ success: true, updated: records.length });
+          });
+        })
+        .catch((queryErr) => {
+          console.error('Query failed, rolling back:', queryErr);
+          connection.rollback(() => {
+            connection.release();
+            res.status(500).json({ error: 'Failed to update bonus records', details: queryErr.message });
+          });
+        });
+    });
+  });
+});
+
+app.get('/api/get-deptname', (req, res) => {
+  const query = `
+    SELECT ID, DeptName FROM department
+  `;
+  db.query(query, (err, results) => {
+    if (err) return res.status(500).json({ error: "Database error" });
+    res.json(results);
   });
 });
 
 app.post('/api/verify-secret', (req, res) => {
   const { secretKey } = req.body;
   db.query("CALL sp_GetEnc(?)", [secretKey], (err, result) => {
-    if (err) 
+    if (err)
       {
         console.log(err);
         return res.status(500).send(err);
