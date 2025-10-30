@@ -11,7 +11,7 @@ app.use(express.urlencoded({ limit: "10mb", extended: true }));
 const ExcelJS = require('exceljs');
 const JWT_SECRET = "your-secret-key";
 app.use(cors({
-  origin: ['http://localhost:5174', 'http://localhost:5173', 'https://dev.trafficcounting.in', 'https://dev.trafficcounting.in'],
+  origin: ['http://localhost:5174', 'http://localhost:5173', 'https://tcs.trafficcounting.com', 'https://dev.trafficcounting.in'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
